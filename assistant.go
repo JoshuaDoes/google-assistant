@@ -47,7 +47,7 @@ func GetCredentialsFromFile(fileCredentials string) (*Token, error) {
 type Assistant struct {
 	GoogleAssistant embedded.EmbeddedAssistantClient
 	Config          *embedded.ConverseRequest_Config
-	AudioBuffer     *AssistantAudioBuffer
+	AudioBuffer     *AudioBuffer
 
 	Canceler                  context.CancelFunc
 	Connection                *grpc.ClientConn
@@ -58,7 +58,7 @@ type Assistant struct {
 	GCPAuth                   *GCPAuthWrapper
 }
 
-type AssistantAudioBuffer struct {
+type AudioBuffer struct {
 	AudioInEncoding        embedded.AudioInConfig_Encoding
 	AudioInSampleRateHertz int32
 
@@ -71,9 +71,9 @@ func (a *Assistant) Initialize(credentials *Token, oauthToken *oauth2.Token) err
 	return a.InitializeRaw(nil, nil, credentials, oauthToken, "", nil)
 }
 
-func (a *Assistant) InitializeRaw(assistConfig *embedded.ConverseRequest_Config, audioBuffer *AssistantAudioBuffer, credentials *Token, oauthToken *oauth2.Token, oauthRedirectURL string, callbackFunc func(permissionCode string) error) error {
+func (a *Assistant) InitializeRaw(assistConfig *embedded.ConverseRequest_Config, audioBuffer *AudioBuffer, credentials *Token, oauthToken *oauth2.Token, oauthRedirectURL string, callbackFunc func(permissionCode string) error) error {
 	if audioBuffer == nil {
-		a.AudioBuffer = &AssistantAudioBuffer{
+		a.AudioBuffer = &AudioBuffer{
 			AudioInEncoding:          embedded.AudioInConfig_LINEAR16,
 			AudioInSampleRateHertz:   16000,
 			AudioOutEncoding:         embedded.AudioOutConfig_LINEAR16,
