@@ -67,6 +67,10 @@ type AudioBuffer struct {
 	AudioOutVolumePercentage int32
 }
 
+func NewAssistant() *Assistant {
+	return &Assistant{}
+}
+
 func (a *Assistant) Initialize(credentials *Token, oauthToken *oauth2.Token) error {
 	return a.InitializeRaw(nil, nil, credentials, oauthToken, "", nil)
 }
@@ -80,6 +84,8 @@ func (a *Assistant) InitializeRaw(assistConfig *embedded.ConverseRequest_Config,
 			AudioOutSampleRateHertz:  16000,
 			AudioOutVolumePercentage: 100,
 		}
+	} else {
+		a.AudioBuffer = audioBuffer
 	}
 
 	if assistConfig == nil {
@@ -217,6 +223,11 @@ func (w *GCPAuthWrapper) Error() error {
 }
 
 func (w *GCPAuthWrapper) Initialize(credentials *Token, oauthRedirectURL string, callbackFunc PermissionCallback) error {
+	if w.PermissionCode != "" {
+		err := w.SetTokenSource(w.PermissionCode)
+		return err
+	}
+
 	if oauthRedirectURL == "" {
 		consensus := externalip.DefaultConsensus(nil, nil)
 		ip, err := consensus.ExternalIP()

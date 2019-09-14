@@ -17,8 +17,12 @@ func main() {
 	var assistant gassist.Assistant
 	var err error
 
+	if len(os.Args) < 2 {
+		panic("Usage: " + os.Args + " client_secret_XXXXXXXXXXXX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.apps.googleusercontent.com.json")
+	}
+
 	fmt.Println("Loading credentials...")
-	credentials, err := gassist.GetCredentialsFromFile("client_secret_XXXXXXXXXXXX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.apps.googleusercontent.com.json")
+	credentials, err := gassist.GetCredentialsFromFile(os.Args[1])
 	if err != nil {
 		panic(err)
 	}
@@ -44,7 +48,6 @@ func main() {
 	fmt.Println("Press enter to send 'input.wav' and listen for responses.")
 	pressEnter()
 
-	//	/*
 	fmt.Println("Reading 'input.wav'...")
 	audioIn, err := ioutil.ReadFile("input.wav")
 	if err != nil {
@@ -105,11 +108,10 @@ func main() {
 				fmt.Println(requestText)
 				gotReqTxt = true
 			}
-			/*			if responseText := result.GetSpokenResponseText(); responseText != "" {
-						fmt.Println("====== Response Text ======")
-						fmt.Println(responseText)
-					} */
-
+			if responseText := result.GetSpokenResponseText(); responseText != "" {
+				fmt.Println("====== Response Text ======")
+				fmt.Println(responseText)
+			}
 			if wroteAudio && gotReqTxt {
 				break
 			}
