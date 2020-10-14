@@ -1,4 +1,3 @@
 # Examples
-example/example
-example/example.exe
-example/*.json
+*.exe
+*.json

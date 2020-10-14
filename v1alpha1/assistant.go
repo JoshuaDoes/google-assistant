@@ -10,10 +10,10 @@ import (
 	"time"
 
 	externalip "github.com/GlenDC/go-external-ip"
-	embedded "github.com/JoshuaDoes/google-assistant/google.golang.org/genproto/googleapis/assistant/embedded/v1alpha1"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/option"
 	"google.golang.org/api/transport"
+	embedded "google.golang.org/genproto/googleapis/assistant/embedded/v1alpha1"
 	"google.golang.org/grpc"
 )
 

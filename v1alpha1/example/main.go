@@ -8,9 +8,10 @@ import (
 	"math"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
-	gassist "github.com/JoshuaDoes/google-assistant"
+	gassist "github.com/JoshuaDoes/google-assistant/v1alpha1"
 )
 
 func main() {
@@ -18,7 +19,7 @@ func main() {
 	var err error
 
 	if len(os.Args) < 2 {
-		panic("Usage: " + os.Args + " client_secret_XXXXXXXXXXXX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.apps.googleusercontent.com.json")
+		panic("Usage: " + strings.Join(os.Args, " ") + " client_secret_XXXXXXXXXXXX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.apps.googleusercontent.com.json")
 	}
 
 	fmt.Println("Loading credentials...")
