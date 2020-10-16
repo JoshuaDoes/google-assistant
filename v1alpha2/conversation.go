@@ -1,4 +1,4 @@
-package main
+package assistant
 
 import (
 	gassist "google.golang.org/genproto/googleapis/assistant/embedded/v1alpha2"
