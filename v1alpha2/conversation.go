@@ -1,6 +1,9 @@
 package assistant
 
 import (
+	"fmt"
+	"io"
+
 	gassist "google.golang.org/genproto/googleapis/assistant/embedded/v1alpha2"
 )
 
@@ -8,6 +11,22 @@ import (
 type Conversation struct {
 	Assistant    *Assistant //A pointer to the assistant, because we don't like high memory usage with multiple conversations now do we?
 	AssistClient gassist.EmbeddedAssistant_AssistClient
+	Running      bool
+}
+
+// Refresh initializes a new client stream, must be called before every query
+func (c *Conversation) Refresh() error {
+	if c.Running {
+		c.AssistClient.CloseSend()
+		c.Running = false
+	}
+	assistClient, err := c.Assistant.GoogleAssistant.Assist(c.Assistant.Context)
+	if err != nil {
+		return err
+	}
+	c.AssistClient = assistClient
+	c.Running = true
+	return nil
 }
 
 // RequestTransportAudio returns an audio query transport, which must be used for the remainder of this conversation
@@ -26,7 +45,10 @@ func (c *Conversation) RequestTransportText() *TransportText {
 
 // Close closes the conversation
 func (c *Conversation) Close() {
-	c.AssistClient.CloseSend()
+	if c.Running {
+		c.AssistClient.CloseSend()
+		c.Running = false
+	}
 }
 
 // TransportAudio holds a request for an audio query
@@ -127,6 +149,7 @@ func (r *TransportAudio) Read(p []byte) (n int, err error) {
 
 // Write implements io.Writer and sends audio directly to Google, must be buffered at an unknown-required rate (32KB/s seems too slow but works in testing)
 func (r *TransportAudio) Write(p []byte) (n int, err error) {
+	r.Conversation.Refresh() //Initialize a new stream
 	err = r.Conversation.AssistClient.Send(&gassist.AssistRequest{
 		Type: &gassist.AssistRequest_AudioIn{
 			AudioIn: p,
@@ -150,8 +173,18 @@ type TransportText struct {
 
 // Query returns the Assistant's response to a query as text
 func (r *TransportText) Query(textQuery string) (string, error) {
+	r.Conversation.Refresh() //Initialize a new stream
 	r.TextQuery = textQuery
+	if err := r.send(textQuery); err != nil {
+		return "", err
+	}
+	if err := r.recv(textQuery); err != nil {
+		return "", err
+	}
+	return r.TextResponse, nil
+}
 
+func (r *TransportText) send(textQuery string) error {
 	err := r.Conversation.AssistClient.Send(&gassist.AssistRequest{
 		Type: &gassist.AssistRequest_Config{
 			Config: &gassist.AssistConfig{
@@ -169,25 +202,39 @@ func (r *TransportText) Query(textQuery string) (string, error) {
 		},
 	})
 	if err != nil {
-		return "", err
+		err = fmt.Errorf("error sending request: %v", err)
 	}
+	return err
+}
 
+func (r *TransportText) recv(textQuery string) error {
 	for {
 		response, err := r.Conversation.AssistClient.Recv()
 		if err != nil {
-			return "", err
+			if err == io.EOF {
+				if err := r.send(textQuery); err != nil {
+					return fmt.Errorf("error re-sending request after EOF: %v", err)
+				}
+				response, err = r.Conversation.AssistClient.Recv()
+				if err != nil {
+					return fmt.Errorf("error getting response after re-sending request from EOF: %v", err)
+				}
+			} else {
+				return fmt.Errorf("error getting response: %v", err)
+			}
 		}
 
 		if response == nil {
-			continue
+			return fmt.Errorf("nil response")
 		}
 
 		if dialogStateOut := response.GetDialogStateOut(); dialogStateOut != nil {
 			r.Conversation.Assistant.DialogState.ConversationState = dialogStateOut.ConversationState
+			r.Conversation.Assistant.DialogState.IsNewConversation = false
 			r.Conversation.Assistant.AudioSettings.AudioOutVolumePercentage = dialogStateOut.VolumePercentage
-			return dialogStateOut.GetSupplementalDisplayText(), nil
+			r.TextResponse = dialogStateOut.GetSupplementalDisplayText()
+			break
 		}
 	}
-
-	return "", nil
+	return nil
 }

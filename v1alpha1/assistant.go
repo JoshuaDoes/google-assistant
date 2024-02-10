@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	externalip "github.com/GlenDC/go-external-ip"
+	externalip "github.com/glendc/go-external-ip"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/option"
 	"google.golang.org/api/transport"

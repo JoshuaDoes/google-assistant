@@ -32,13 +32,11 @@ type Assistant struct {
 }
 
 // NewAssistant returns a new Google Assistant to operate on
-func NewAssistant(token *Token, oauthToken *oauth2.Token, languageCode string, device *Device, audioSettings *AudioSettings) (Assistant, error) {
-	gcpAuthWrapper := &GCPAuthWrapper{OauthToken: oauthToken}
-
+func NewAssistant(token *Token, oauthToken *oauth2.Token, callbackFunc TokenCallback, internalHost, languageCode string, device *Device, audioSettings *AudioSettings) (Assistant, error) {
 	assistant := Assistant{
 		AudioSettings: audioSettings,
 		Device:        device,
-		GCPAuth:       gcpAuthWrapper,
+		GCPAuth:       &GCPAuthWrapper{OauthToken: oauthToken},
 		LanguageCode:  languageCode,
 		DialogState: &gassist.DialogStateIn{
 			ConversationState: make([]byte, 0),
@@ -46,20 +44,22 @@ func NewAssistant(token *Token, oauthToken *oauth2.Token, languageCode string, d
 			IsNewConversation: true,
 		},
 	}
-
-	if oauthToken.Valid() == false {
-		return assistant, gcpAuthWrapper.Initialize(token, "", nil)
+	if oauthToken.Valid() {
+		return assistant, nil
 	}
-
-	return assistant, nil
+	return assistant, assistant.GCPAuth.Initialize(token, internalHost, callbackFunc)
 }
 
-// GetAuthURL returns the Google authentication URL to sign into your Google account
+// GetAuthURL returns the Google authentication URL to sign into your Google account, only if you actually need to
+// Also acts as a token refresh mechanism when running into auth issues
 func (a *Assistant) GetAuthURL() string {
 	if a.GCPAuth == nil {
-		return ""
+		return "ERROR" //Must initialize with NewAssistant!
 	}
-	return a.GCPAuth.AuthURL
+	if a.GCPAuth.OauthToken == nil || !a.GCPAuth.OauthToken.Valid() {
+		return a.GCPAuth.AuthURL
+	}
+	return ""
 }
 
 func (a *Assistant) newConnection(ctx context.Context) (conn *grpc.ClientConn, err error) {
@@ -79,7 +79,11 @@ func (a *Assistant) NewConversation(timeout time.Duration) (*Conversation, error
 		return nil, err
 	}
 
-	a.Context, a.Canceler = context.WithDeadline(context.Background(), time.Now().Add(timeout))
+	if int64(timeout) > 0 {
+		a.Context, a.Canceler = context.WithDeadline(context.Background(), time.Now().Add(timeout))
+	} else {
+		a.Context = context.Background()
+	}
 
 	a.Connection, err = a.newConnection(a.Context)
 	if err != nil {
@@ -88,14 +92,8 @@ func (a *Assistant) NewConversation(timeout time.Duration) (*Conversation, error
 
 	a.GoogleAssistant = gassist.NewEmbeddedAssistantClient(a.Connection)
 
-	assistClient, err := a.GoogleAssistant.Assist(a.Context)
-	if err != nil {
-		return nil, err
-	}
-
 	conversation := &Conversation{
-		Assistant:    a,
-		AssistClient: assistClient,
+		Assistant: a,
 	}
 
 	return conversation, nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"golang.org/x/oauth2"
 )
@@ -21,13 +22,13 @@ type Token struct {
 	} `json:"installed"`
 }
 
-//PermissionCallback holds a callback function to return an authentication token to
-type PermissionCallback func(string) error
+//TokenCallback holds a callback function to return an OAuth2 token to, usually to cache for relogging in
+type TokenCallback func(*oauth2.Token)
 
 //GCPAuthWrapper handles Google authentication
 type GCPAuthWrapper struct {
 	AuthURL        string
-	CallbackFunc   PermissionCallback
+	CallbackFunc   TokenCallback
 	Config         *oauth2.Config
 	OauthSrv       *http.Server
 	OauthToken     *oauth2.Token
@@ -42,13 +43,13 @@ func (w *GCPAuthWrapper) Error() error {
 }
 
 //Initialize initializes authentication to allow a user to sign in to the application
-func (w *GCPAuthWrapper) Initialize(credentials *Token, oauthRedirectURL string, callbackFunc PermissionCallback) error {
+func (w *GCPAuthWrapper) Initialize(credentials *Token, internalHost string, callbackFunc TokenCallback) error {
+	w.AuthURL = credentials.Installed.RedirectUris[0]
+
 	if w.PermissionCode != "" {
 		err := w.SetTokenSource(w.PermissionCode)
 		return err
 	}
-
-	oauthRedirectURL = "http://localhost:8080"
 
 	w.Config = &oauth2.Config{
 		ClientID:     credentials.Installed.ClientID,
@@ -56,7 +57,7 @@ func (w *GCPAuthWrapper) Initialize(credentials *Token, oauthRedirectURL string,
 		Scopes: []string{
 			"https://www.googleapis.com/auth/assistant-sdk-prototype",
 		},
-		RedirectURL: oauthRedirectURL,
+		RedirectURL: w.AuthURL,
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  "https://accounts.google.com/o/oauth2/auth",
 			TokenURL: "https://accounts.google.com/o/oauth2/token",
@@ -66,46 +67,38 @@ func (w *GCPAuthWrapper) Initialize(credentials *Token, oauthRedirectURL string,
 	w.AuthURL = w.Config.AuthCodeURL("state", oauth2.AccessTypeOffline)
 	if callbackFunc != nil {
 		w.CallbackFunc = callbackFunc
-	} else {
-		w.CallbackFunc = w.SetTokenSource
 	}
 
-	go w.startOauthHandler()
-
-	return nil
-}
-
-func (w *GCPAuthWrapper) startOauthHandler() {
 	w.OauthSrv = &http.Server{
-		Addr:    ":8080",
+		Addr: internalHost,
 		Handler: http.DefaultServeMux,
 	}
 
 	http.HandleFunc("/", w.oauthHandler)
+	go func() {
+		if err := w.OauthSrv.ListenAndServe(); err != nil {
+			w.AuthError = err
+		}
+	}()
+	time.Sleep(time.Second * 1) //Give it about 1 second to time out
 
-	err := w.OauthSrv.ListenAndServe()
-	if err != http.ErrServerClosed {
-		w.AuthError = err
-	}
+	return w.AuthError
 }
 
 func (w *GCPAuthWrapper) oauthHandler(writer http.ResponseWriter, req *http.Request) {
-	permissionCode := req.URL.Query().Get("code")
-
-	if permissionCode != "" {
-		w.PermissionCode = permissionCode
-
-		writer.Write([]byte(fmt.Sprintf("<html><body><h3>Authentication Successful</h3><p>Your token is <strong>%s</strong>.</p><footer>You may safely close this page.</footer></body></html>", w.PermissionCode)))
-
-		if w.CallbackFunc != nil {
-			w.CallbackFunc(w.PermissionCode)
+	w.PermissionCode = req.URL.Query().Get("code")
+	if w.PermissionCode != "" {
+		if err := w.SetTokenSource(w.PermissionCode); err != nil {
+			writer.Write([]byte(fmt.Sprintf("<html><body><style>{background-color:black;color:white;}</style><h3>Authentication Failure</h3><p>The following error was provided: <strong>%v</strong>.</p><footer>You should try logging in again.</footer></body></html>")))
+		} else {
+			writer.Write([]byte(fmt.Sprintf("<html><body><style>body{background-color:black;color:white;}</style><h3>Authentication Successful</h3><p>Your token is <strong>%s</strong>.</p><footer>You may safely close this page.</footer></body></html>", w.PermissionCode)))
 		}
 	} else {
-		writer.Write([]byte(fmt.Sprintf("<html><body><h3>Authentication Failure</h3><p>No token received!</p><footer>You should try logging in again.</footer></body></html>")))
+		writer.Write([]byte(fmt.Sprintf("<html><body><style>body{background-color:black;color:white;}</style><h3>Authentication Failure</h3><p>No token received!</p><footer>You should try logging in again.</footer></body></html>")))
 	}
 }
 
-//SetTokenSource is the default permission callback function, which is used to finish the authentication process
+//SetTokenSource is used to finish the authentication process, as well as calling any provided callback function
 func (w *GCPAuthWrapper) SetTokenSource(permissionCode string) error {
 	var err error
 
@@ -114,6 +107,10 @@ func (w *GCPAuthWrapper) SetTokenSource(permissionCode string) error {
 	w.OauthToken, err = w.Config.Exchange(ctx, permissionCode)
 	if err != nil {
 		return err
+	}
+
+	if w.CallbackFunc != nil {
+		go w.CallbackFunc(w.OauthToken)
 	}
 
 	return nil
