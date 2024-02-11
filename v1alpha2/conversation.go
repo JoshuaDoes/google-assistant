@@ -173,6 +173,9 @@ type TransportText struct {
 
 // Query returns the Assistant's response to a query as text
 func (r *TransportText) Query(textQuery string) (string, error) {
+	if url := r.Conversation.Assistant.GetAuthURL(); url != "" {
+		return "", fmt.Errorf("must re-authenticate again: %s", url)
+	}
 	r.Conversation.Refresh() //Initialize a new stream
 	r.TextQuery = textQuery
 	if err := r.send(textQuery); err != nil {
